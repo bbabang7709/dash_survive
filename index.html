@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DASH PRIME - Prototype</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #050505; /* 심연의 우주/사이버 공간 느낌 */
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        /* UI 오버레이 스타일 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+        .hud-text {
+            text-shadow: 0 0 10px rgba(0, 200, 255, 0.5);
+        }
+        #flow-bar-container {
+            width: 300px;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        #flow-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #00f0ff, #0055ff);
+            transition: width 0.1s linear, background-color 0.3s ease;
+            box-shadow: 0 0 10px #00f0ff;
+        }
+        #flow-bar.flow-max {
+            background: linear-gradient(90deg, #ff0055, #ffaa00);
+            box-shadow: 0 0 15px #ff0055;
+        }
+        
+        /* 시작 및 게임오버 화면 */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            backdrop-filter: blur(5px);
+            z-index: 10;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .btn {
+            background: transparent;
+            color: white;
+            border: 2px solid #00f0ff;
+            padding: 12px 32px;
+            font-size: 1.25rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.2) inset;
+        }
+        .btn:hover {
+            background: #00f0ff;
+            color: black;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.8);
+        }
+        
+        /* 조준선 커서 */
+        #crosshair {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 5;
+            transition: border-color 0.1s, transform 0.1s;
+        }
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+        body.charging #crosshair {
+            border-color: #00f0ff;
+            transform: translate(-50%, -50%) scale(1.5);
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="crosshair"></div>
+
+    <div id="ui-layer">
+        <div class="flex justify-between items-start">
+            <div>
+                <h1 class="text-3xl font-black italic tracking-widest text-white hud-text">DASH PRIME</h1>
+                <div class="mt-2 text-sm text-gray-400">속도 레벨 (FLOW)</div>
+                <div id="flow-bar-container">
+                    <div id="flow-bar"></div>
+                </div>
+                <div class="mt-1 text-xs font-bold" id="combo-text" style="color: #00f0ff;">COMBO x1</div>
+            </div>
+            <div class="text-right">
+                <div class="text-sm text-gray-400">SCORE</div>
+                <div class="text-4xl font-bold font-mono hud-text" id="score-display">0</div>
+                <div class="mt-2 text-sm text-gray-400">TIME</div>
+                <div class="text-xl font-mono hud-text" id="time-display">00:00</div>
+            </div>
+        </div>
+        
+        <div class="flex justify-center mb-8">
+            <div id="charge-indicator" class="text-xl font-bold tracking-widest transition-colors duration-200" style="color: rgba(255,255,255,0.3);">
+                [ 좌클릭 유지하여 차지 / 마우스로 조준 ]
+            </div>
+        </div>
+    </div>
+
+    <!-- 시작 화면 -->
+    <div id="start-screen" class="screen">
+        <h1 class="text-7xl font-black italic mb-4 tracking-tighter" style="color: white; text-shadow: 4px 4px 0 #00f0ff, -2px -2px 0 #ff0055;">DASH PRIME</h1>
+        <p class="text-xl mb-8 text-gray-300">멈추면 약해지는 초고속 대시 사냥 게임</p>
+        
+        <div class="bg-gray-900 border border-gray-700 p-6 rounded-lg mb-8 max-w-md w-full">
+            <h3 class="text-lg font-bold mb-4 text-[#00f0ff]">조작법 및 시스템</h3>
+            <ul class="space-y-3 text-sm text-gray-300">
+                <li><span class="text-white font-bold">1. 차지 & 발사:</span> 마우스 좌클릭을 누르고 있으면 차지가 진행됩니다. 마우스 방향으로 조준 후 클릭을 떼면 대시합니다.</li>
+                <li><span class="text-white font-bold">2. 3단 대시 (SNAP / DRIVE / BREAK):</span> 오래 누를수록 더 빠르고 멀리, 관통력이 강해집니다.</li>
+                <li><span class="text-white font-bold">3. FLOW (흐름):</span> 적을 연속으로 처치하면 FLOW 게이지가 찹니다. FLOW가 높을수록 기본 속도와 충돌 판정이 강해집니다.</li>
+                <li><span class="text-[#ff0055] font-bold">주의:</span> 속도가 충분하지 않을 때 적과 충돌하면 체력(가속도)을 잃습니다.</li>
+            </ul>
+        </div>
+        
+        <button id="start-btn" class="btn">시스템 가동 (START)</button>
+    </div>
+
+    <!-- 게임 오버 화면 -->
+    <div id="gameover-screen" class="screen hidden">
+        <h2 class="text-5xl font-black mb-2 text-red-500 tracking-widest">FLOW LOST</h2>
+        <p class="text-xl mb-6 text-gray-400">동력이 소진되었습니다.</p>
+        
+        <div class="text-center mb-8">
+            <div class="text-sm text-gray-500">최종 점수</div>
+            <div class="text-6xl font-mono font-bold text-white mb-2" id="final-score">0</div>
+            <div class="text-sm text-gray-500">생존 시간: <span id="final-time" class="text-white font-mono">00:00</span></div>
+        </div>
+        
+        <button id="restart-btn" class="btn">재가동 (RESTART)</button>
+    </div>
+
+<script>
+/**
+ * DASH PRIME - Core Engine
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false }); // 성능 최적화
+const crosshair = document.getElementById('crosshair');
+
+// UI Elements
+const scoreDisplay = document.getElementById('score-display');
+const timeDisplay = document.getElementById('time-display');
+const flowBar = document.getElementById('flow-bar');
+const comboText = document.getElementById('combo-text');
+const chargeIndicator = document.getElementById('charge-indicator');
+const startScreen = document.getElementById('start-screen');
+const gameoverScreen = document.getElementById('gameover-screen');
+
+// Game Settings
+let WIDTH, HEIGHT;
+let lastTime = 0;
+let isPlaying = false;
+let gameTime = 0;
+let score = 0;
+
+// Camera Shake
+let cameraShake = 0;
+
+// Mouse State
+const mouse = { x: 0, y: 0, isDown: false };
+
+// --- Constants & Config ---
+const CONFIG = {
+    // 플레이어
+    PLAYER_RADIUS: 12,
+    PLAYER_BASE_FRICTION: 0.98, // 평소 감속
+    PLAYER_DASH_FRICTION: 0.995, // 대시 중 감속 (유지력)
+    MIN_DAMAGE_SPEED: 400, // 적에게 피해를 주기 위한 최소 속도
+    
+    // 대시 차지 단계
+    CHARGE_LEVELS: [
+        { name: "SNAP", time: 0.1, power: 1200, color: "#ffffff", width: 4 },   // 1단: 짧고 빠름
+        { name: "DRIVE", time: 0.4, power: 2200, color: "#00f0ff", width: 8 },  // 2단: 주력 전투
+        { name: "BREAK", time: 0.9, power: 3800, color: "#ff0055", width: 14 }  // 3단: 필살기
+    ],
+    MAX_CHARGE_TIME: 1.2,
+    
+    // FLOW 시스템
+    FLOW_MAX: 100,
+    FLOW_DECAY_RATE: 8, // 초당 감소량
+    FLOW_PER_KILL: 15,
+    
+    // 적 스폰
+    SPAWN_RATE_BASE: 1.5, // 초당 스폰
+};
+
+// --- Game State ---
+let player;
+let enemies = [];
+let particles = [];
+let trails = [];
+let hitStops = 0; // 타격감(히트스톱) 프레임 대기
+
+class Player {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.radius = CONFIG.PLAYER_RADIUS;
+        
+        // 상태
+        this.hp = 3; // 맞을 수 있는 횟수 (실질적으론 가속도 상실)
+        this.chargeTime = 0;
+        this.isDashing = false;
+        this.dashLevel = 0;
+        
+        // FLOW (콤보)
+        this.flow = 0;
+        this.combo = 1;
+        
+        // 잔상 기록
+        this.history = [];
+    }
+    
+    update(dt) {
+        // 입력 처리: 차지 중
+        if (mouse.isDown) {
+            this.chargeTime += dt;
+            if (this.chargeTime > CONFIG.MAX_CHARGE_TIME) this.chargeTime = CONFIG.MAX_CHARGE_TIME;
+            
+            // 시각적 피드백
+            document.body.classList.add('charging');
+            this.updateChargeUI();
+        } else {
+            document.body.classList.remove('charging');
+            if (this.chargeTime > 0) {
+                this.executeDash();
+                this.chargeTime = 0;
+                chargeIndicator.textContent = "[ 좌클릭 유지하여 차지 / 마우스로 조준 ]";
+                chargeIndicator.style.color = "rgba(255,255,255,0.3)";
+            }
+        }
+        
+        // 물리 이동
+        const speedSq = this.vx * this.vx + this.vy * this.vy;
+        const currentSpeed = Math.sqrt(speedSq);
+        
+        // 대시 상태 판별 (속도가 기준 이상일 때만 공격 판정)
+        this.isDashing = currentSpeed > CONFIG.MIN_DAMAGE_SPEED;
+        
+        // 마찰력 적용
+        let friction = this.isDashing ? CONFIG.PLAYER_DASH_FRICTION : CONFIG.PLAYER_BASE_FRICTION;
+        
+        // 마우스로 조준 중일 때 이동 속도 급감 (제어력 향상)
+        if (mouse.isDown) friction *= 0.8;
+        
+        this.vx *= friction;
+        this.vy *= friction;
+        
+        // 이전 위치 저장 (충돌 감지 및 잔상용)
+        const oldX = this.x;
+        const oldY = this.y;
+        
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        // 벽 충돌 (바운스)
+        if (this.x < this.radius) { this.x = this.radius; this.vx *= -0.8; }
+        if (this.x > WIDTH - this.radius) { this.x = WIDTH - this.radius; this.vx *= -0.8; }
+        if (this.y < this.radius) { this.y = this.radius; this.vy *= -0.8; }
+        if (this.y > HEIGHT - this.radius) { this.y = HEIGHT - this.radius; this.vy *= -0.8; }
+        
+        // 잔상 기록 업데이트 (속도가 빠를 때만)
+        if (currentSpeed > 200) {
+            this.history.unshift({x: this.x, y: this.y, level: this.dashLevel});
+            if (this.history.length > 15 + (this.flow / 10)) { // FLOW가 높으면 잔상이 길어짐
+                this.history.pop();
+            }
+        } else if (this.history.length > 0) {
+            this.history.pop(); // 서서히 줄어듦
+            this.dashLevel = 0;
+        }
+
+        // FLOW 감소
+        if (this.flow > 0 && currentSpeed < CONFIG.MIN_DAMAGE_SPEED * 1.5) {
+            this.flow -= CONFIG.FLOW_DECAY_RATE * dt;
+            if (this.flow < 0) this.flow = 0;
+        }
+        this.updateFlowUI();
+    }
+    
+    updateChargeUI() {
+        let level = 0;
+        for (let i = 0; i < CONFIG.CHARGE_LEVELS.length; i++) {
+            if (this.chargeTime >= CONFIG.CHARGE_LEVELS[i].time) {
+                level = i;
+            }
+        }
+        const chargeData = CONFIG.CHARGE_LEVELS[level];
+        chargeIndicator.textContent = `>>> ${chargeData.name} READY <<<`;
+        chargeIndicator.style.color = chargeData.color;
+        chargeIndicator.style.textShadow = `0 0 10px ${chargeData.color}`;
+    }
+    
+    executeDash() {
+        // 발사 레벨 결정
+        let level = 0;
+        for (let i = 0; i < CONFIG.CHARGE_LEVELS.length; i++) {
+            if (this.chargeTime >= CONFIG.CHARGE_LEVELS[i].time) {
+                level = i;
+            }
+        }
+        
+        this.dashLevel = level;
+        const chargeData = CONFIG.CHARGE_LEVELS[level];
+        
+        // 방향 계산 (플레이어 -> 마우스)
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist > 0) {
+            // FLOW 보너스: 게이지가 찰수록 대시 파워 증가 (최대 1.3배)
+            const flowMultiplier = 1 + (this.flow / CONFIG.FLOW_MAX) * 0.3;
+            const power = chargeData.power * flowMultiplier;
+            
+            this.vx = (dx / dist) * power;
+            this.vy = (dy / dist) * power;
+            
+            // 화면 흔들림 및 효과음(시각적)
+            cameraShake = level * 3;
+            createParticles(this.x, this.y, chargeData.color, 10, -this.vx, -this.vy, 0.5);
+        }
+    }
+    
+    draw(ctx) {
+        // 잔상 그리기 (속도감의 핵심)
+        if (this.history.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(this.history[0].x, this.history[0].y);
+            for (let i = 1; i < this.history.length; i++) {
+                // 부드러운 곡선 처리는 생략하고 직선으로 빠르게
+                ctx.lineTo(this.history[i].x, this.history[i].y);
+            }
+            
+            let trailColor = "#ffffff";
+            let trailWidth = 4;
+            if (this.dashLevel > 0) {
+                trailColor = CONFIG.CHARGE_LEVELS[this.dashLevel].color;
+                trailWidth = CONFIG.CHARGE_LEVELS[this.dashLevel].width;
+            }
+            
+            // FLOW가 MAX면 빛나는 연출
+            if (this.flow >= CONFIG.FLOW_MAX) {
+                trailColor = "#ffaa00";
+            }
+
+            ctx.strokeStyle = trailColor;
+            ctx.lineWidth = trailWidth;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            ctx.globalAlpha = 0.6;
+            ctx.stroke();
+            
+            // 잔상 블러/발광 효과
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = trailColor;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 1.0;
+        }
+
+        // 차지 중 이펙트
+        if (mouse.isDown) {
+            let level = 0;
+            for (let i = 0; i < CONFIG.CHARGE_LEVELS.length; i++) {
+                if (this.chargeTime >= CONFIG.CHARGE_LEVELS[i].time) level = i;
+            }
+            const chargeData = CONFIG.CHARGE_LEVELS[level];
+            const ratio = this.chargeTime / CONFIG.MAX_CHARGE_TIME;
+            
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius + 5 + ratio * 10, 0, Math.PI * 2);
+            ctx.strokeStyle = chargeData.color;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // 조준선 연결
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.1 + ratio * 0.4})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // 플레이어 본체 (흰색 외곽선, 파란 중심)
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        
+        // 상태에 따른 코어 색상 변경
+        let coreColor = "#0055ff"; // 기본
+        if (this.isDashing) {
+            coreColor = CONFIG.CHARGE_LEVELS[this.dashLevel].color;
+        } else if (this.flow >= CONFIG.FLOW_MAX) {
+            coreColor = "#ff0055"; // 각성 상태
+        }
+        
+        ctx.fillStyle = coreColor;
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+    }
+    
+    addKill() {
+        this.flow += CONFIG.FLOW_PER_KILL;
+        if (this.flow > CONFIG.FLOW_MAX) {
+            this.flow = CONFIG.FLOW_MAX;
+            this.combo++;
+        }
+        
+        // 속도 유지 보너스 (적을 관통할 때 감속을 줄임)
+        const flowMultiplier = 1 + (this.flow / CONFIG.FLOW_MAX) * 0.5;
+        // 충돌 시 약간의 감속이 있지만 FLOW가 높으면 뚫고 지나감
+        this.vx *= (0.8 + flowMultiplier * 0.15); 
+        this.vy *= (0.8 + flowMultiplier * 0.15);
+        
+        hitStops = 2; // 타격감: 프레임 잠깐 정지
+        cameraShake = 5;
+        
+        // 점수 획득
+        score += 100 * this.combo;
+        scoreDisplay.innerText = score;
+    }
+    
+    takeDamage() {
+        // 무리 진입 시 속도가 낮아 데미지 판정
+        this.flow = 0;
+        this.combo = 1;
+        this.hp--;
+        
+        // 크게 튕겨나감
+        this.vx *= -1.5;
+        this.vy *= -1.5;
+        
+        cameraShake = 15;
+        createParticles(this.x, this.y, "#ff0000", 30);
+        
+        if (this.hp <= 0) {
+            gameOver();
+        }
+    }
+    
+    updateFlowUI() {
+        const percentage = (this.flow / CONFIG.FLOW_MAX) * 100;
+        flowBar.style.width = `${percentage}%`;
+        
+        if (this.flow >= CONFIG.FLOW_MAX) {
+            flowBar.classList.add('flow-max');
+            comboText.style.color = "#ff0055";
+            comboText.style.textShadow = "0 0 10px #ff0055";
+        } else {
+            flowBar.classList.remove('flow-max');
+            comboText.style.color = "#00f0ff";
+            comboText.style.textShadow = "none";
+        }
+        comboText.innerText = `COMBO x${this.combo}`;
+    }
+}
+
+class Enemy {
+    constructor() {
+        // 화면 밖에서 스폰
+        const side = Math.floor(Math.random() * 4);
+        const margin = 50;
+        if (side === 0) { this.x = Math.random() * WIDTH; this.y = -margin; } // 상
+        else if (side === 1) { this.x = WIDTH + margin; this.y = Math.random() * HEIGHT; } // 우
+        else if (side === 2) { this.x = Math.random() * WIDTH; this.y = HEIGHT + margin; } // 하
+        else { this.x = -margin; this.y = Math.random() * HEIGHT; } // 좌
+        
+        // 타입 결정 (일반, 추적형, 코어몹)
+        const rand = Math.random();
+        if (rand > 0.85 && gameTime > 30) {
+            this.type = 'CORE'; // 두꺼운 장갑, 레벨2 대시 필요
+            this.radius = 20;
+            this.color = '#ff8800';
+            this.speed = 40 + Math.random() * 20;
+            this.hp = 2;
+        } else if (rand > 0.6 && gameTime > 15) {
+            this.type = 'TRACKER'; // 빠름, 플레이어 적극 추적
+            this.radius = 12;
+            this.color = '#aa00ff';
+            this.speed = 120 + Math.random() * 40;
+            this.hp = 1;
+        } else {
+            this.type = 'NORMAL'; // 단순 접근
+            this.radius = 15;
+            this.color = '#ff3333';
+            this.speed = 60 + Math.random() * 40;
+            this.hp = 1;
+        }
+        
+        this.markedForDeletion = false;
+        
+        // 부유 애니메이션용
+        this.angle = Math.random() * Math.PI * 2;
+    }
+    
+    update(dt) {
+        // 플레이어 방향으로 이동
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist > 0) {
+            this.x += (dx / dist) * this.speed * dt;
+            this.y += (dy / dist) * this.speed * dt;
+        }
+        
+        // 시각적 회전
+        this.angle += dt * 2;
+    }
+    
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+        
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        
+        if (this.type === 'NORMAL') {
+            // 사각형
+            ctx.beginPath();
+            ctx.rect(-this.radius, -this.radius, this.radius*2, this.radius*2);
+            ctx.fill();
+            ctx.stroke();
+        } else if (this.type === 'TRACKER') {
+            // 삼각형
+            ctx.beginPath();
+            ctx.moveTo(0, -this.radius * 1.2);
+            ctx.lineTo(this.radius, this.radius);
+            ctx.lineTo(-this.radius, this.radius);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // 코어
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI*2);
+            ctx.fill();
+        } else if (this.type === 'CORE') {
+            // 팔각형
+            ctx.beginPath();
+            for(let i=0; i<8; i++) {
+                const a = (Math.PI*2 / 8) * i;
+                const px = Math.cos(a) * this.radius;
+                const py = Math.sin(a) * this.radius;
+                if(i===0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            
+            // 안쪽 X 표시
+            ctx.beginPath();
+            ctx.moveTo(-this.radius*0.5, -this.radius*0.5);
+            ctx.lineTo(this.radius*0.5, this.radius*0.5);
+            ctx.moveTo(this.radius*0.5, -this.radius*0.5);
+            ctx.lineTo(-this.radius*0.5, this.radius*0.5);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    }
+}
+
+class Particle {
+    constructor(x, y, color, speedScale, vx = 0, vy = 0) {
+        this.x = x;
+        this.y = y;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 200 * speedScale + 50;
+        this.vx = Math.cos(angle) * speed + vx * 0.2;
+        this.vy = Math.sin(angle) * speed + vy * 0.2;
+        this.color = color;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.03 + 0.02;
+        this.size = Math.random() * 4 + 2;
+    }
+    update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        this.vx *= 0.95;
+        this.vy *= 0.95;
+        this.life -= this.decay;
+    }
+    draw(ctx) {
+        ctx.globalAlpha = Math.max(0, this.life);
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+function createParticles(x, y, color, count, vx=0, vy=0, speedScale=1) {
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, color, speedScale, vx, vy));
+    }
+}
+
+// --- CCD (연속 충돌 감지) 관련 선-원 충돌 함수 ---
+// 점 C(원점)가 선분 AB와 만나는지 체크 (대시 중 관통 구현)
+function lineIntersectsCircle(A, B, C, radius) {
+    const dist = pointToSegmentDistance(C, A, B);
+    return dist <= radius;
+}
+
+function pointToSegmentDistance(p, v, w) {
+    const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+    if (l2 == 0) return Math.sqrt((p.x - v.x) ** 2 + (p.y - v.y) ** 2);
+    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
+    return Math.sqrt((p.x - proj.x) ** 2 + (p.y - proj.y) ** 2);
+}
+
+// --- Main Engine ---
+
+function resize() {
+    WIDTH = window.innerWidth;
+    HEIGHT = window.innerHeight;
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+}
+window.addEventListener('resize', resize);
+
+function initGame() {
+    resize();
+    player = new Player(WIDTH / 2, HEIGHT / 2);
+    enemies = [];
+    particles = [];
+    score = 0;
+    gameTime = 0;
+    lastTime = performance.now();
+    isPlaying = true;
+    
+    scoreDisplay.innerText = "0";
+    startScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
+    
+    requestAnimationFrame(gameLoop);
+}
+
+function gameOver() {
+    isPlaying = false;
+    document.body.classList.remove('charging');
+    gameoverScreen.classList.remove('hidden');
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('final-time').innerText = formatTime(gameTime);
+}
+
+function formatTime(seconds) {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+}
+
+// Input Event Listeners
+window.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    
+    crosshair.style.left = mouse.x + 'px';
+    crosshair.style.top = mouse.y + 'px';
+});
+
+window.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || !isPlaying) return; // 좌클릭만
+    mouse.isDown = true;
+});
+
+window.addEventListener('mouseup', (e) => {
+    if (e.button !== 0 || !isPlaying) return;
+    mouse.isDown = false;
+});
+
+document.getElementById('start-btn').addEventListener('click', initGame);
+document.getElementById('restart-btn').addEventListener('click', initGame);
+
+// 스폰 시스템
+let spawnTimer = 0;
+function handleSpawning(dt) {
+    spawnTimer += dt;
+    
+    // 시간 경과에 따라 난이도(스폰율) 증가
+    const currentSpawnRate = CONFIG.SPAWN_RATE_BASE + (gameTime / 15); // 15초마다 스폰 1마리/초 증가
+    const spawnInterval = 1 / currentSpawnRate;
+    
+    if (spawnTimer >= spawnInterval) {
+        spawnTimer = 0;
+        enemies.push(new Enemy());
+    }
+}
+
+// 루프
+function gameLoop(timestamp) {
+    if (!isPlaying) return;
+    
+    // Delta Time 계산 (상한선 두어 탭 이동시 튀는 현상 방지)
+    let dt = (timestamp - lastTime) / 1000;
+    if (dt > 0.1) dt = 0.1; 
+    lastTime = timestamp;
+    
+    // 타격감 프레임 딜레이 (히트스톱)
+    if (hitStops > 0) {
+        hitStops--;
+        requestAnimationFrame(gameLoop);
+        return;
+    }
+    
+    gameTime += dt;
+    timeDisplay.innerText = formatTime(gameTime);
+    
+    // Update
+    const oldPlayerPos = { x: player.x, y: player.y };
+    player.update(dt);
+    const newPlayerPos = { x: player.x, y: player.y };
+    
+    handleSpawning(dt);
+    
+    // Collision Detection (연속 충돌 감지)
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        enemy.update(dt);
+        
+        // 1. 빠른 대시 중 관통 체크 (선분-원 충돌)
+        const isPiercing = player.isDashing && lineIntersectsCircle(oldPlayerPos, newPlayerPos, enemy, enemy.radius + player.radius);
+        
+        // 2. 일반 겹침 체크 (정지/느릴 때)
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const isOverlapping = dist < player.radius + enemy.radius;
+        
+        if (isPiercing || isOverlapping) {
+            if (player.isDashing) {
+                // 공격 성공
+                
+                // CORE 몹은 DRIVE(레벨 1 초과) 이상이거나 FLOW가 MAX일 때만 파괴 가능
+                if (enemy.type === 'CORE' && player.dashLevel < 1 && player.flow < CONFIG.FLOW_MAX) {
+                    // 튕김
+                    player.vx *= -0.5;
+                    player.vy *= -0.5;
+                    player.chargeTime = 0;
+                    cameraShake = 10;
+                    createParticles(enemy.x, enemy.y, "#ffffff", 15);
+                } else {
+                    enemy.hp--;
+                    if(enemy.hp <= 0) {
+                        enemy.markedForDeletion = true;
+                        player.addKill();
+                        createParticles(enemy.x, enemy.y, enemy.color, 20, player.vx, player.vy, 2);
+                        
+                        // 화면 분할 이펙트(사선 긋기) 효과를 위해 파티클 특수 스폰
+                        if(player.dashLevel >= 2) {
+                             createParticles(enemy.x, enemy.y, "#ffffff", 10, player.vx*2, player.vy*2, 3);
+                        }
+                    } else {
+                        // 피격 이펙트만
+                        createParticles(enemy.x, enemy.y, enemy.color, 10);
+                        player.vx *= 0.9; // 약간 감속
+                        player.vy *= 0.9;
+                    }
+                }
+            } else {
+                // 공격 실패, 데미지 입음 (무적 프레임 없음 - 잔혹함)
+                player.takeDamage();
+                // 적을 밀어냄
+                enemy.x -= dx * 0.5;
+                enemy.y -= dy * 0.5;
+            }
+        }
+    }
+    
+    // 쓸어담기
+    enemies = enemies.filter(e => !e.markedForDeletion);
+    
+    // 파티클 업데이트
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update(dt);
+        if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+    
+    // Draw
+    drawGame();
+    
+    requestAnimationFrame(gameLoop);
+}
+
+function drawGame() {
+    // 배경 (약간의 잔상 효과를 위해 알파값으로 덮기)
+    ctx.fillStyle = 'rgba(5, 5, 5, 0.4)';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    
+    // 배경 격자 (속도감을 위한 이동)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.lineWidth = 1;
+    const gridOffset = (gameTime * 20) % 50;
+    ctx.beginPath();
+    for (let x = -gridOffset; x < WIDTH; x += 50) {
+        ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT);
+    }
+    for (let y = -gridOffset; y < HEIGHT; y += 50) {
+        ctx.moveTo(0, y); ctx.lineTo(WIDTH, y);
+    }
+    ctx.stroke();
+    
+    ctx.save();
+    
+    // 카메라 쉐이크
+    if (cameraShake > 0) {
+        const dx = (Math.random() - 0.5) * cameraShake;
+        const dy = (Math.random() - 0.5) * cameraShake;
+        ctx.translate(dx, dy);
+        cameraShake *= 0.8;
+        if (cameraShake < 0.5) cameraShake = 0;
+    }
+    
+    // 파티클
+    particles.forEach(p => p.draw(ctx));
+    
+    // 적
+    enemies.forEach(e => e.draw(ctx));
+    
+    // 플레이어
+    player.draw(ctx);
+    
+    // 주변 위험 경고 (화면 테두리 붉은 빛)
+    if (!player.isDashing && enemies.length > 15) {
+        ctx.boxShadow = "inset 0 0 50px rgba(255,0,0,0.5)";
+        ctx.fillStyle = "rgba(255,0,0,0.05)";
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    }
+    
+    ctx.restore();
+}
+
+// 폰트 프리로드 및 초기화
+document.fonts.ready.then(() => {
+    resize();
+});
+
+</script>
+</body>
+</html>
